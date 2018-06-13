@@ -1,10 +1,17 @@
 package com.benjamin.utils;
 
+import android.content.Context;
+
+import net.lingala.zip4j.core.ZipFile;
+import net.lingala.zip4j.exception.ZipException;
+import net.lingala.zip4j.progress.ProgressMonitor;
+
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -124,5 +131,107 @@ public class ZipUtil {
       
         }//end of if  
           
-    }//end of func  
+    }//end of func
+
+	public static void unZip(Context context, String assetFileName, String outputDirectory, boolean isReWrite) throws IOException {
+		File file = new File(outputDirectory);
+		if (!file.exists()) {
+			file.mkdirs();
+		}
+
+		InputStream inputStream = context.getAssets().open(assetFileName);
+		ZipInputStream zipInputStream = new ZipInputStream(inputStream);
+		ZipEntry zipEntry = zipInputStream.getNextEntry();
+		byte[] buffer = new byte[1048576];
+
+		for(boolean var9 = false; zipEntry != null; zipEntry = zipInputStream.getNextEntry()) {
+			if (zipEntry.isDirectory()) {
+				file = new File(outputDirectory + File.separator + zipEntry.getName());
+				if (isReWrite || !file.exists()) {
+					file.mkdir();
+				}
+			} else {
+				file = new File(outputDirectory + File.separator + zipEntry.getName());
+				if (isReWrite || !file.exists()) {
+					file.createNewFile();
+					FileOutputStream fileOutputStream = new FileOutputStream(file);
+
+					int count;
+					while((count = zipInputStream.read(buffer)) > 0) {
+						fileOutputStream.write(buffer, 0, count);
+					}
+
+					fileOutputStream.close();
+				}
+			}
+		}
+
+		zipInputStream.close();
+	}
+
+	public static void unZip(File zipFile, String outputFilePath, ZipUtil.OnUnZipCallback onUnZipCallback, boolean isDeleteZip) throws ZipException {
+		unZip(zipFile, (String)null, outputFilePath, onUnZipCallback, isDeleteZip);
+	}
+
+	public static void unZip(final File zipFile, String password, String outputFilePath, final ZipUtil.OnUnZipCallback onUnZipCallback, final boolean isDeleteZip) throws ZipException {
+		ZipFile zFile = new ZipFile(zipFile);
+		zFile.setFileNameCharset("UTF-8");
+		if (!zFile.isValidZipFile()) {
+			throw new ZipException("该文件不是有效的压缩包!");
+		} else {
+			File destDir = new File(outputFilePath);
+			if (destDir.isDirectory() && !destDir.exists()) {
+				destDir.mkdir();
+			}
+
+			if (zFile.isEncrypted()) {
+				zFile.setPassword(password == null ? "" : password);
+			}
+
+			final ProgressMonitor progressMonitor = zFile.getProgressMonitor();
+			Thread thread = new Thread(new Runnable() {
+				public void run() {
+					try {
+//						int precentDone = false;
+						if (onUnZipCallback != null) {
+							onUnZipCallback.onStart();
+
+							int precentDonex;
+							do {
+								Thread.sleep(1L);
+								precentDonex = progressMonitor.getPercentDone();
+								onUnZipCallback.onUnZipping(precentDonex);
+							} while(precentDonex < 100);
+
+							onUnZipCallback.onSuccess();
+							return;
+						}
+					} catch (InterruptedException var5) {
+						onUnZipCallback.onFail();
+						var5.printStackTrace();
+						return;
+					} finally {
+						if (isDeleteZip) {
+							zipFile.delete();
+						}
+
+					}
+
+				}
+			});
+			thread.start();
+			zFile.setRunInThread(true);
+			zFile.extractAll(outputFilePath);
+		}
+	}
+
+	public interface OnUnZipCallback {
+		void onStart();
+
+		void onUnZipping(int var1);
+
+		void onFail();
+
+		void onSuccess();
+	}
 }
